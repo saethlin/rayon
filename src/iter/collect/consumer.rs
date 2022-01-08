@@ -1,20 +1,12 @@
 use super::super::plumbing::*;
+use crate::SendPtr;
 use std::marker::PhantomData;
-use std::mem::MaybeUninit;
 use std::ptr;
 use std::slice;
 
-/// We need to store raw pointers in a `Send` struct to remember
-/// provenance (see `CollectResult`).
-#[derive(Clone, Copy)]
-struct SendPtr<T>(*mut T);
-
-// SAFETY: !Send for raw pointers is not for safety, just as a lint
-unsafe impl<T> Send for SendPtr<T> {}
-
 pub(super) struct CollectConsumer<'c, T: Send> {
     /// See `CollectConsumer` for explanation of why this is not a slice
-    start: SendPtr<MaybeUninit<T>>,
+    start: SendPtr<T>,
     len: usize,
     marker: PhantomData<&'c mut T>,
 }
@@ -22,11 +14,7 @@ pub(super) struct CollectConsumer<'c, T: Send> {
 impl<'c, T: Send + 'c> CollectConsumer<'c, T> {
     /// The target memory is considered uninitialized, and will be
     /// overwritten without reading or dropping existing values.
-    pub(super) fn new(
-        start: *mut MaybeUninit<T>,
-        len: usize,
-        marker: PhantomData<&'c mut T>,
-    ) -> Self {
+    pub(super) fn new(start: *mut T, len: usize, marker: PhantomData<&'c mut T>) -> Self {
         CollectConsumer {
             start: SendPtr(start),
             len,
@@ -45,7 +33,7 @@ pub(super) struct CollectResult<'c, T> {
     /// but retains the provenance of the entire array so that we can merge
     /// these regions together in `CollectReducer`.
     /// Constructing a slice from this start + start_l
-    start: SendPtr<MaybeUninit<T>>,
+    start: SendPtr<T>,
     total_len: usize,
     /// The current initialized length after `start`
     initialized_len: usize,
@@ -76,7 +64,7 @@ impl<'c, T> Drop for CollectResult<'c, T> {
         // to be initialized by the folder.
         unsafe {
             ptr::drop_in_place(slice::from_raw_parts_mut(
-                self.start.0 as *mut T,
+                self.start.0,
                 self.initialized_len,
             ));
         }
@@ -130,7 +118,7 @@ impl<'c, T: Send + 'c> Folder<T> for CollectResult<'c, T> {
 
         // Write item and increase the initialized length
         unsafe {
-            (*self.start.0.add(self.initialized_len)).write(item);
+            self.start.0.add(self.initialized_len).write(item);
             self.initialized_len += 1;
         }
 
