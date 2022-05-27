@@ -57,6 +57,27 @@ jobs:
       - name: Test multiple rayon-core
         run: ./ci/highlander.sh
 
+  miri:
+    name: Miri
+    runs-on: ubuntu-latest
+    env:
+      MIRIFLAGS: -Zmiri-disable-isolation
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Install
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          profile: minimal
+          override: true
+          components: miri
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: miri
+          args: test
+
   fmt:
     name: Format
     runs-on: ubuntu-latest
